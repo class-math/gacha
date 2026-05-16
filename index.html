@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>実験して発見しよう！確率シミュレーター（保存機能付き）</title>
+    <title>実験して発見しよう！確率シミュレーター（3秒アニメーション版）</title>
     <style>
         :root {
             --red: #ff4d4d;
@@ -105,7 +105,9 @@
         }
         .main-btn:active { transform: translateY(3px); box-shadow: 0 2px 0 #f08c00; }
         .main-btn.next-step { background-color: #e8590c; box-shadow: 0 5px 0 #b03a00; }
+        .main-btn.next-step:active { box-shadow: 0 2px 0 #b03a00; }
         .main-btn.reset-step { background-color: #12b886; box-shadow: 0 5px 0 #0ca678; }
+        .main-btn:disabled { background-color: #adb5bd; box-shadow: 0 5px 0 #868e96; cursor: not-allowed; }
 
         .result-display {
             display: flex; justify-content: center; gap: 60px;
@@ -126,6 +128,17 @@
         }
         .ball-hidden { background: #ced4da; color: #868e96; box-shadow: none; border: 4px dashed #adb5bd; }
 
+        /* ガチャガチャシャッフルアニメーション */
+        @keyframes shuffle {
+            0% { transform: translate(0, 0) scale(1); }
+            20% { transform: translate(-4px, 4px) scale(0.95); }
+            40% { transform: translate(4px, -4px) scale(1.05); }
+            60% { transform: translate(-4px, -4px) scale(0.98); }
+            80% { transform: translate(4px, 4px) scale(1.02); }
+            100% { transform: translate(0, 0) scale(1); }
+        }
+        .animate-shuffle { animation: shuffle 0.2s ease-in-out infinite; background-color: #fab005 !important; color: white !important; border: 4px solid #fff !important; }
+
         @keyframes pop { 0% { transform: scale(0); } 90% { transform: scale(1.1); } 100% { transform: scale(1); } }
         .animate-pop { animation: pop 0.3s ease-out forwards; }
 
@@ -139,7 +152,7 @@
         }
 
         .math-table { width: 100%; border-collapse: collapse; margin-top: 10px; background: white; }
-        .math-table th, .math-table td { border: 1px solid #dee2e6; padding: 12px; text-align: center; font-size: 16px; }
+        .math-table th, .math-table table td { border: 1px solid #dee2e6; padding: 12px; text-align: center; font-size: 16px; }
         .math-table th { background-color: #f8f9fa; }
 
         .empty-row-text { color: #adb5bd; font-style: italic; }
@@ -162,7 +175,6 @@
             padding: 8px 16px; font-size: 14px; border-radius: 5px;
             cursor: pointer; font-weight: bold;
         }
-        .clear-data-btn:hover { background-color: #c92a2a; }
     </style>
 </head>
 <body>
@@ -240,17 +252,14 @@
     let selectedBall2 = null;
 
     let activePatterns = [];
-    let foundPatterns = []; // ここがローカルストレージと連動します
+    let foundPatterns = []; 
 
-    // アプリの起動処理
     function initApp() {
-        // 保存されている設定やモードを復元（なければデフォルト）
         currentMode = localStorage.getItem('gacha_currentMode') || 'P';
         document.getElementById('count-red').value = localStorage.getItem('gacha_countRed') || '2';
         document.getElementById('count-yellow').value = localStorage.getItem('gacha_countYellow') || '2';
         document.getElementById('count-blue').value = localStorage.getItem('gacha_countBlue') || '2';
 
-        // 視覚的なモードボタンの切り替え
         document.getElementById('btn-p').classList.toggle('active', currentMode === 'P');
         document.getElementById('btn-c').classList.toggle('active', currentMode === 'C');
         updateLabelsByMode();
@@ -259,7 +268,6 @@
         const y = parseInt(document.getElementById('count-yellow').value) || 0;
         const b = parseInt(document.getElementById('count-blue').value) || 0;
         
-        // ガチャの中身の生成
         const pool = document.getElementById('ball-pool');
         pool.innerHTML = '';
         ballData = [];
@@ -268,16 +276,10 @@
         addBalls(b, 'はずれ', 'ball-0');
         document.getElementById('total-balls').innerText = ballData.length;
         
-        // パターン定義の生成
         buildPatternList(r, y, b);
 
-        // 保存された「発見済みデータ」の読み込み
         const savedFound = localStorage.getItem(`gacha_foundPatterns_${currentMode}_${r}_${y}_${b}`);
-        if (savedFound) {
-            foundPatterns = JSON.parse(savedFound);
-        } else {
-            foundPatterns = [];
-        }
+        foundPatterns = savedFound ? JSON.parse(savedFound) : [];
 
         updateTableHeader();
         renderTable();
@@ -337,6 +339,7 @@
 
     function updateButtonText() {
         const btn = document.getElementById('action-btn');
+        btn.disabled = false;
         if (stepState === 0) {
             btn.className = 'main-btn';
             btn.innerText = (currentMode === 'P') ? "① 右手をまわす！" : "2個同時にまわす！";
@@ -349,33 +352,21 @@
         }
     }
 
-    // 設定値が変わったら保存して再起動
     function resetConfig() {
         localStorage.setItem('gacha_countRed', document.getElementById('count-red').value);
         localStorage.setItem('gacha_countYellow', document.getElementById('count-yellow').value);
         localStorage.setItem('gacha_countBlue', document.getElementById('count-blue').value);
-        
-        stepState = 0;
-        clearHands();
-        initApp();
+        stepState = 0; clearHands(); initApp();
     }
 
-    // モードボタンが押されたとき
     function setMode(mode) {
-        currentMode = mode;
-        localStorage.setItem('gacha_currentMode', mode);
-        stepState = 0;
-        clearHands();
-        initApp();
+        currentMode = mode; localStorage.setItem('gacha_currentMode', mode);
+        stepState = 0; clearHands(); initApp();
     }
 
-    // データの完全消去
     function clearSavedData() {
         if(confirm("これまでの実験データをすべて消去して、最初からやり直しますか？")) {
-            localStorage.clear();
-            stepState = 0;
-            clearHands();
-            initApp();
+            localStorage.clear(); stepState = 0; clearHands(); initApp();
         }
     }
 
@@ -394,8 +385,8 @@
         }
 
         const isAllCompleted = foundPatterns.length === activePatterns.length;
-
         let html = '';
+        
         foundPatterns.forEach(p => {
             let col1 = '', col2 = '', answerText = "？？ 通り";
             if (currentMode === 'P') {
@@ -423,7 +414,6 @@
                 }
                 answerText = `<b>${calc}</b> 通り`;
             }
-
             html += `<tr><td>${getColorIcon(col1)} ${col1}</td><td>${getColorIcon(col2)} ${col2}</td><td>${answerText}</td></tr>`;
         });
 
@@ -443,34 +433,76 @@
         if(name === '1等') return '🔴'; if(name === '2等') return '🟡'; return '🔵';
     }
 
+    // ボタン処理（3秒アニメーションを連動）
     function handleButtonClick() {
         if(ballData.length < 2) return;
+        const btn = document.getElementById('action-btn');
 
         if (currentMode === 'P') {
+            // 【右手 ➔ 左手 モード】
             if (stepState === 0) {
-                const indices = getRandomTwoIndices();
-                selectedBall1 = ballData[indices.i1]; selectedBall2 = ballData[indices.i2];
-                revealBall('ball-1', selectedBall1);
-                stepState = 1;
+                // 3秒間のアニメーションをセット
+                btn.disabled = true;
+                btn.innerText = "まわしています...";
+                const h1 = document.getElementById('ball-1');
+                h1.className = 'picked-ball animate-shuffle';
+                h1.innerText = "？";
+
+                setTimeout(() => {
+                    const indices = getRandomTwoIndices();
+                    selectedBall1 = ballData[indices.i1];
+                    selectedBall2 = ballData[indices.i2];
+
+                    revealBall('ball-1', selectedBall1);
+                    stepState = 1;
+                    updateButtonText();
+                }, 3000);
+
             } else if (stepState === 1) {
-                revealBall('ball-2', selectedBall2);
-                addResultToData(selectedBall1.name, selectedBall2.name);
-                stepState = 2;
+                btn.disabled = true;
+                btn.innerText = "まわしています...";
+                const h2 = document.getElementById('ball-2');
+                h2.className = 'picked-ball animate-shuffle';
+                h2.innerText = "？";
+
+                setTimeout(() => {
+                    revealBall('ball-2', selectedBall2);
+                    addResultToData(selectedBall1.name, selectedBall2.name);
+                    stepState = 2;
+                    updateButtonText();
+                }, 3000);
+
             } else if (stepState === 2) {
-                clearHands(); stepState = 0;
+                clearHands(); stepState = 0; updateButtonText();
             }
         } else {
+            // 【同時に2個 モード】
             if (stepState === 0) {
-                const indices = getRandomTwoIndices();
-                selectedBall1 = ballData[indices.i1]; selectedBall2 = ballData[indices.i2];
-                revealBall('ball-1', selectedBall1); revealBall('ball-2', selectedBall2);
-                addResultToData(selectedBall1.name, selectedBall2.name);
-                stepState = 2;
+                btn.disabled = true;
+                btn.innerText = "まわしています...";
+                
+                const h1 = document.getElementById('ball-1');
+                const h2 = document.getElementById('ball-2');
+                h1.className = 'picked-ball animate-shuffle';
+                h2.className = 'picked-ball animate-shuffle';
+                h1.innerText = "？"; h2.innerText = "？";
+
+                setTimeout(() => {
+                    const indices = getRandomTwoIndices();
+                    selectedBall1 = ballData[indices.i1];
+                    selectedBall2 = ballData[indices.i2];
+
+                    revealBall('ball-1', selectedBall1);
+                    revealBall('ball-2', selectedBall2);
+                    addResultToData(selectedBall1.name, selectedBall2.name);
+                    stepState = 2;
+                    updateButtonText();
+                }, 3000);
+
             } else if (stepState === 2) {
-                clearHands(); stepState = 0;
+                clearHands(); stepState = 0; updateButtonText();
             }
         }
-        updateButtonText();
     }
 
     function clearHands() {
@@ -493,7 +525,6 @@
 
         if (activePatterns.includes(pKey) && !foundPatterns.includes(pKey)) {
             foundPatterns.push(pKey);
-            // ローカルストレージに保存
             const r = document.getElementById('count-red').value;
             const y = document.getElementById('count-yellow').value;
             const b = document.getElementById('count-blue').value;
@@ -515,7 +546,6 @@
         el.innerText = ballInfo.name.charAt(0);
     }
 
-    // アプリ起動
     initApp();
 </script>
 
