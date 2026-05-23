@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>実験して発見しよう！確率シミュレーター（爆速1秒アニメ版）</title>
+    <title>実験して発見しよう！確率シミュレーター（時間制約安心プラン）</title>
     <style>
         :root {
             --red: #ff4d4d;
@@ -80,6 +80,20 @@
             margin-bottom: 20px;
             text-align: center;
             background-color: #fff;
+            position: relative;
+        }
+
+        /* 試行回数カウンターのバッジ */
+        .trial-counter {
+            position: absolute;
+            top: 10px;
+            right: 15px;
+            background-color: #495057;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: bold;
         }
 
         .ball-pool { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 10px; min-height: 45px; }
@@ -128,7 +142,6 @@
         }
         .ball-hidden { background: #ced4da; color: #868e96; box-shadow: none; border: 4px dashed #adb5bd; }
 
-        /* シャッフルアニメーション（テンポよく揺れるように速度微調整） */
         @keyframes shuffle {
             0% { transform: translate(0, 0) scale(1); }
             20% { transform: translate(-5px, 5px) scale(0.95); }
@@ -206,6 +219,7 @@
 
     <div class="machine-visual">
         <strong>ガチャの中身（合計 <span id="total-balls">0</span> 個）</strong>
+        <div class="trial-counter">まわした回数: <span id="trial-count">0</span> 回</div>
         <div id="ball-pool" class="ball-pool"></div>
     </div>
 
@@ -253,6 +267,7 @@
 
     let activePatterns = [];
     let foundPatterns = []; 
+    let totalTrials = 0; // ガチャを回した合計回数
 
     function initApp() {
         currentMode = localStorage.getItem('gacha_currentMode') || 'P';
@@ -280,6 +295,11 @@
 
         const savedFound = localStorage.getItem(`gacha_foundPatterns_${currentMode}_${r}_${y}_${b}`);
         foundPatterns = savedFound ? JSON.parse(savedFound) : [];
+
+        // 試行回数の復元
+        const savedTrials = localStorage.getItem(`gacha_trials_${currentMode}_${r}_${y}_${b}`);
+        totalTrials = savedTrials ? parseInt(savedTrials) : 0;
+        document.getElementById('trial-count').innerText = totalTrials;
 
         updateTableHeader();
         renderTable();
@@ -310,7 +330,7 @@
             if(y >= 2) activePatterns.push('2等 と 2等');
             if(b >= 2) activePatterns.push('はずれ と はずれ');
             if(r >= 1 && y >= 1) activePatterns.push('1等 と 2等');
-            if(r >= 1 && b >= 1) net = activePatterns.push('1等 と はずれ');
+            if(r >= 1 && b >= 1) activePatterns.push('1等 と はずれ');
             if(y >= 1 && b >= 1) activePatterns.push('2等 と はずれ');
         }
         document.getElementById('max-patterns').innerText = activePatterns.length;
@@ -433,68 +453,99 @@
         if(name === '1等') return '🔴'; if(name === '2等') return '🟡'; return '🔵';
     }
 
-    // ボタン処理（アニメーションを1秒【1000ms】に短縮！）
+    // 時間制約用の最強の組み合わせ決定アルゴリズム（45回を超えたら忖度発動）
+    function pickCalculatedPairs() {
+        // まだ見つかっていないパターンを洗い出す
+        let missing = activePatterns.filter(p => !foundPatterns.includes(p));
+        
+        // 全部見つかっている、または45回未満、または忖度対象の組み合わせがない場合は完全ランダム
+        if (missing.length === 0 || totalTrials < 45) {
+            return getRandomTwoIndices();
+        }
+
+        // 残り5回(46〜50)で、未発見のパターンから一つを強制選択
+        let targetPattern = missing[0]; 
+        let name1 = "", name2 = "";
+
+        if (currentMode === 'P') {
+            let parts = targetPattern.split('|');
+            name1 = parts[0]; name2 = parts[1];
+        } else {
+            let parts = targetPattern.split(' と ');
+            name1 = parts[0]; name2 = parts[1];
+        }
+
+        // 玉データから合致する2個のインデックスを探し出す
+        let i1 = -1, i2 = -1;
+        for (let i = 0; i < ballData.length; i++) {
+            if (i1 === -1 && ballData[i].name === name1) {
+                i1 = i;
+            } else if (i2 === -1 && ballData[i].name === name2 && i !== i1) {
+                i2 = i;
+            }
+        }
+
+        // 万が一、設定ミスなどで見つからなかった場合の安全弁
+        if (i1 === -1 || i2 === -1) {
+            return getRandomTwoIndices();
+        }
+
+        return { i1: i1, i2: i2 };
+    }
+
     function handleButtonClick() {
         if(ballData.length < 2) return;
         const btn = document.getElementById('action-btn');
 
         if (currentMode === 'P') {
             if (stepState === 0) {
-                btn.disabled = true;
-                btn.innerText = "ガチャガチャ...";
+                btn.disabled = true; btn.innerText = "ガチャガチャ...";
                 const h1 = document.getElementById('ball-1');
-                h1.className = 'picked-ball animate-shuffle';
-                h1.innerText = "？";
+                h1.className = 'picked-ball animate-shuffle'; h1.innerText = "？";
+
+                // ここで玉を決定
+                const indices = pickCalculatedPairs();
+                selectedBall1 = ballData[indices.i1]; selectedBall2 = ballData[indices.i2];
 
                 setTimeout(() => {
-                    const indices = getRandomTwoIndices();
-                    selectedBall1 = ballData[indices.i1];
-                    selectedBall2 = ballData[indices.i2];
-
                     revealBall('ball-1', selectedBall1);
-                    stepState = 1;
-                    updateButtonText();
-                }, 1000); // 1秒
+                    stepState = 1; updateButtonText();
+                }, 1000);
 
             } else if (stepState === 1) {
-                btn.disabled = true;
-                btn.innerText = "ガチャガチャ...";
+                btn.disabled = true; btn.innerText = "ガチャガチャ...";
                 const h2 = document.getElementById('ball-2');
-                h2.className = 'picked-ball animate-shuffle';
-                h2.innerText = "？";
+                h2.className = 'picked-ball animate-shuffle'; h2.innerText = "？";
 
                 setTimeout(() => {
                     revealBall('ball-2', selectedBall2);
+                    totalTrials++; // セット完了でカウント+1
+                    document.getElementById('trial-count').innerText = totalTrials;
                     addResultToData(selectedBall1.name, selectedBall2.name);
-                    stepState = 2;
-                    updateButtonText();
-                }, 1000); // 1秒
+                    stepState = 2; updateButtonText();
+                }, 1000);
 
             } else if (stepState === 2) {
                 clearHands(); stepState = 0; updateButtonText();
             }
         } else {
             if (stepState === 0) {
-                btn.disabled = true;
-                btn.innerText = "ガチャガチャ...";
-                
+                btn.disabled = true; btn.innerText = "ガチャガチャ...";
                 const h1 = document.getElementById('ball-1');
                 const h2 = document.getElementById('ball-2');
-                h1.className = 'picked-ball animate-shuffle';
-                h2.className = 'picked-ball animate-shuffle';
+                h1.className = 'picked-ball animate-shuffle'; h2.className = 'picked-ball animate-shuffle';
                 h1.innerText = "？"; h2.innerText = "？";
 
-                setTimeout(() => {
-                    const indices = getRandomTwoIndices();
-                    selectedBall1 = ballData[indices.i1];
-                    selectedBall2 = ballData[indices.i2];
+                const indices = pickCalculatedPairs();
+                selectedBall1 = ballData[indices.i1]; selectedBall2 = ballData[indices.i2];
 
-                    revealBall('ball-1', selectedBall1);
-                    revealBall('ball-2', selectedBall2);
+                setTimeout(() => {
+                    revealBall('ball-1', selectedBall1); revealBall('ball-2', selectedBall2);
+                    totalTrials++; // カウント+1
+                    document.getElementById('trial-count').innerText = totalTrials;
                     addResultToData(selectedBall1.name, selectedBall2.name);
-                    stepState = 2;
-                    updateButtonText();
-                }, 1000); // 1秒
+                    stepState = 2; updateButtonText();
+                }, 1000);
 
             } else if (stepState === 2) {
                 clearHands(); stepState = 0; updateButtonText();
@@ -520,11 +571,15 @@
             else pKey = `${arr[0]} と ${arr[1]}`;
         }
 
+        const r = document.getElementById('count-red').value;
+        const y = document.getElementById('count-yellow').value;
+        const b = document.getElementById('count-blue').value;
+
+        // 試行回数の保存
+        localStorage.setItem(`gacha_trials_${currentMode}_${r}_${y}_${b}`, totalTrials);
+
         if (activePatterns.includes(pKey) && !foundPatterns.includes(pKey)) {
             foundPatterns.push(pKey);
-            const r = document.getElementById('count-red').value;
-            const y = document.getElementById('count-yellow').value;
-            const b = document.getElementById('count-blue').value;
             localStorage.setItem(`gacha_foundPatterns_${currentMode}_${r}_${y}_${b}`, JSON.stringify(foundPatterns));
         }
         renderTable();
